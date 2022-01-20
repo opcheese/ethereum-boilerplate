@@ -5,6 +5,53 @@ import { useEffect, useState } from "react";
 import { useMoralis } from "react-moralis";
 import AddressInput from "../../AddressInput";
 import AssetSelector from "./AssetSelector";
+import { ethers } from 'ethers';
+import mor from 'moralis';
+
+const ERC20TransferABI = [
+  {
+    constant: false,
+    inputs: [
+      {
+        name: '_to',
+        type: 'address',
+      },
+      {
+        name: '_value',
+        type: 'uint256',
+      },
+    ],
+    name: 'transfer',
+    outputs: [
+      {
+        name: '',
+        type: 'bool',
+      },
+    ],
+    payable: false,
+    stateMutability: 'nonpayable',
+    type: 'function',
+  },
+  {
+    constant: true,
+    inputs: [
+      {
+        name: '_owner',
+        type: 'address',
+      },
+    ],
+    name: 'balanceOf',
+    outputs: [
+      {
+        name: 'balance',
+        type: 'uint256',
+      },
+    ],
+    payable: false,
+    stateMutability: 'view',
+    type: 'function',
+  },
+];
 
 const styles = {
   card: {
@@ -45,6 +92,8 @@ function Transfer() {
   const { Moralis } = useMoralis();
   const [receiver, setReceiver] = useState();
   const [asset, setAsset] = useState();
+  const [gasValue, setGasValue] = useState();
+
   const [tx, setTx] = useState();
   const [amount, setAmount] = useState();
   const [isPending, setIsPending] = useState(false);
@@ -68,53 +117,73 @@ function Transfer() {
     const { amount, receiver, asset } = tx;
 
     let options = {};
+    let type = "erc20";
+    // switch (asset.token_address) {
+    //   case "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee":
+    //     type = "native";
+    //     options = {
+    //       native: "native",
+    //       amount: Moralis.Units.ETH(amount),
+    //       receiver,
+    //       awaitReceipt: false,
+    //     };
+    //     break;
+    //   default:
+    //     options = {
+    //       type: "erc20",
+    //       amount: Moralis.Units.Token(amount, asset.decimals),
+    //       receiver,
+    //       contractAddress: asset.token_address,
+    //       awaitReceipt: false,
+    //     };
+    // }
 
+    //setIsPending(true);
+    //const txStatus = await Moralis.transfer(options);
+    const { web3: internalWeb3, account: sender, signer } = Moralis.getInternalWeb3Provider();
+    let gas  = 0;
     switch (asset.token_address) {
       case "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee":
-        options = {
-          native: "native",
-          amount: Moralis.Units.ETH(amount),
-          receiver,
-          awaitReceipt: false,
-        };
+        const tx = {
+          from: sender,
+          to: receiver,
+          value:Moralis.Units.Token(amount, asset.decimals)
+        }
+     
+        gas = await   signer.estimateGas(tx);
+        setGasValue(gas.toString());
         break;
       default:
-        options = {
-          type: "erc20",
-          amount: Moralis.Units.Token(amount, asset.decimals),
-          receiver,
-          contractAddress: asset.token_address,
-          awaitReceipt: false,
-        };
-    }
-
-    setIsPending(true);
-    const txStatus = await Moralis.transfer(options);
-
-    txStatus
-      .on("transactionHash", (hash) => {
-        openNotification({
-          message: "🔊 New Transaction",
-          description: `${hash}`,
-        });
-        console.log("🔊 New Transaction", hash);
-      })
-      .on("receipt", (receipt) => {
-        openNotification({
-          message: "📃 New Receipt",
-          description: `${receipt.transactionHash}`,
-        });
-        console.log("🔊 New Receipt: ", receipt);
-        setIsPending(false);
-      })
-      .on("error", (error) => {
-        openNotification({
-          message: "📃 Error",
-          description: `${error.message}`,
-        });
-        console.error(error);
-        setIsPending(false);
-      });
+      //   case "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee":
+          let customToken = new ethers.Contract(asset.token_address, ERC20TransferABI, signer);
+          
+          gas = await customToken.estimateGas.transfer(receiver,Moralis.Units.Token(amount, asset.decimals),{from:sender})
+          setGasValue(gas.toString());
+      }
+    // txStatus
+    //   .on("transactionHash", (hash) => {
+    //     openNotification({
+    //       message: "🔊 New Transaction",
+    //       description: `${hash}`,
+    //     });
+    //     console.log("🔊 New Transaction", hash);
+    //   })
+    //   .on("receipt", (receipt) => {
+    //     openNotification({
+    //       message: "📃 New Receipt",
+    //       description: `${receipt.transactionHash}`,
+    //     });
+    //     console.log("🔊 New Receipt: ", receipt);
+    //     setIsPending(false);
+    //   })
+    //   .on("error", (error) => {
+    //     openNotification({
+    //       message: "📃 Error",
+    //       description: `${error.message}`,
+    //     });
+    //     console.error(error);
+    //     setIsPending(false);
+    //   });
   }
 
   return (
@@ -155,9 +224,16 @@ function Transfer() {
           onClick={() => transfer()}
           disabled={!tx}
         >
-          Transfer💸
+         Calculate Gas
         </Button>
       </div>
+
+      <div>
+          <div style={styles.textWrapper}>
+            <Text strong>Gas result:</Text>
+          </div>
+          <Text strong>{gasValue}</Text>
+        </div>
     </div>
   );
 }
